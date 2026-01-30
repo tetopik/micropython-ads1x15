@@ -153,7 +153,7 @@ class ADS1115:
     def read_any(self, raw=False):
         """Non-blocking read between channels setted by set_new_conv,
            returns None if the conversion is still happening."""
-        if self._read_register(_REGISTER_CONFIG) & _OS_BUSY:
+        if not self._read_register(_REGISTER_CONFIG) & _OS_NOTBUSY:
             return None
         res = self._read_register(_REGISTER_CONVERT)
         res -= 65536 if res >= 32768 else 0
@@ -167,7 +167,7 @@ class ADS1115:
                              _MODE_SINGLE | _OS_SINGLE | _GAINS[self.gain] |
                              _CHANNELS[(channel1, channel2)]))
         while not self._read_register(_REGISTER_CONFIG) & _OS_NOTBUSY:
-            await asyncio.sleep_ms(1)
+            await asyncio.sleep_ms(0)
         res = self._read_register(_REGISTER_CONVERT)
         res -= 65536 if res >= 32768 else 0
         return res if raw else res * _GAINS_V[self.gain] / 32768
