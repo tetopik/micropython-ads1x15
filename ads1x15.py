@@ -21,7 +21,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 #
-import utime as time
+
+import time
+import asyncio
+
 
 _REGISTER_MASK = const(0x03)
 _REGISTER_CONVERT = const(0x00)
@@ -141,6 +144,33 @@ class ADS1115:
     def _read_register(self, register):
         self.i2c.readfrom_mem_into(self.address, register, self.temp2)
         return (self.temp2[0] << 8) | self.temp2[1]
+
+    def set_new_conv(self, rate=4, channel1=0, channel2=None):
+        """Start new conversion for later non-blocking read_any."""
+        self.set_conv(rate, channel1, channel2)
+        self._write_register(_REGISTER_CONFIG, self.mode)
+
+    def read_any(self, raw=False):
+        """Non-blocking read between channels setted by set_new_conv,
+           returns None if the conversion is still happening."""
+        if self._read_register(_REGISTER_CONFIG) & _OS_BUSY:
+            return None
+        res = self._read_register(_REGISTER_CONVERT)
+        res -= 65536 if res >= 32768 else 0
+        return res if raw else res * _GAINS_V[self.gain] / 32768
+    
+    async def read_async(self, rate=4, channel1=0, channel2=None, raw=False):
+        """Asynchronous mode to read voltage between a channel and GND.
+           Await time depends on conversion rate."""
+        self._write_register(_REGISTER_CONFIG, (_CQUE_NONE | _CLAT_NONLAT |
+                             _CPOL_ACTVLOW | _CMODE_TRAD | _RATES[rate] |
+                             _MODE_SINGLE | _OS_SINGLE | _GAINS[self.gain] |
+                             _CHANNELS[(channel1, channel2)]))
+        while not self._read_register(_REGISTER_CONFIG) & _OS_NOTBUSY:
+            await asyncio.sleep_ms(1)
+        res = self._read_register(_REGISTER_CONVERT)
+        res -= 65536 if res >= 32768 else 0
+        return res if raw else res * _GAINS_V[self.gain] / 32768
 
     def raw_to_v(self, raw):
         v_p_b = _GAINS_V[self.gain] / 32768
